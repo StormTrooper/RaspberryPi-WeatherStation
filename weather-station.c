@@ -47,6 +47,7 @@ int read_mcp3008(int channel)
   return value;
 }
 
+#ifdef DEBUG
 int debug(char *debug_info)
 {
 	FILE *fp;
@@ -56,6 +57,7 @@ int debug(char *debug_info)
 	fclose(fp);
 	return 0;
 }
+#endif
 
 
 float calculate_dew_point(float temp, float rel_humidity)
@@ -81,7 +83,10 @@ int main(int argc, char **argv)
 {
 
 
-        debug("Program startup");
+        #ifdef DEBUG
+	debug("Program Startup");
+	#endif
+
 	int opt = 0;
 	int longIndex = 0;
 
@@ -100,62 +105,110 @@ int main(int argc, char **argv)
  	CURL *curl;
         CURLcode res;
         curl_global_init(CURL_GLOBAL_ALL);
-	time_t start, stop, curtime;
+	time_t start, stop;
+
+	#ifdef DEBUG
+		time_t curtime;
+	#endif
+
 	float dewpoint;
 	float abs_humidity;
 
 	char buffer[200];
         char tempbuffer[30];
 
+
 	start = time(NULL);
-	time(&curtime);
-	debug(ctime(&curtime));
- 	for(; /* some condition that takes forever to meet */;) {
+	#ifdef DEBUG
+			time(&curtime);
+			debug(ctime(&curtime));
+ 	#endif
+
+	for(; /* some condition that takes forever to meet */;) {
      			// do stuff that apparently takes forever.
-       		stop = time(NULL);
+
+		stop = time(NULL);
        		double diff = difftime(stop, start);
 
     		if (diff >= 300) {				// Upload data to internal server 5 mins
                 	//printf("3 mins passed - send data...\n");
-	                time(&curtime);
-        	        debug(ctime(&curtime));
 
-			debug("Write data to mysql");
-                	start = time(NULL);
 
-			debug("Reading mcp3008 -chan 0");
+			#ifdef DEBUG
+				time(&curtime);
+				debug(ctime(&curtime));
+				debug("Write data to mysql");
+		               	start = time(NULL);
+				debug("Reading mcp3008 -chan 0");
+			#endif
+
 			int myval = read_mcp3008(0);			//Read UVI
-			debug("done chan 0");
+			#ifdef DEBUG
+				debug("done chan 0");
+			#endif
+
 			float vout = myval/1023.0 * 3.3;
 			float sensorVoltage = vout / 471.0;
 			float millivolts = sensorVoltage * 1000.0;
 			float uvi = millivolts * (5.25/20.0);
 
-			debug("Reading mcp3008 - chan 3");
+			#ifdef DEBUG
+				debug("Reading mcp3008 - chan 3");
+			#endif
+
 			myval = read_mcp3008(3);				//Read temt6000
-			debug("done chan 3");
+
+			#ifdef DEBUG
+				debug("done chan 3");
+			#endif
+
 			vout = myval/1023.0 * 3.3;
 			float microAmps = vout * 100.0;			// microamps = Vout/10k (resistor on temt6000) * 1000000
 			float Light = microAmps * 2;				//Acording to datasheet graph
 
-			debug("Reading dht22");
+			#ifdef DEBUG
+				debug("Reading dht22");
+			#endif
+
 			readDHT22();				// Read DHT22 Sensor
-			debug("done dht22");
-			debug("Reading bmp085");
+
+			#ifdef DEBUG
+				debug("done dht22");
+				debug("Reading bmp085");
+			#endif
 			bmp085_Calibration();
-			debug("done bmp085");
-        		temperature = bmp085_GetTemperature(bmp085_ReadUT());
-			debug("got temp");
-        		pressure = bmp085_GetPressure(bmp085_ReadUP());
-			debug("got pressure");
+
+			#ifdef DEBUG
+				debug("done bmp085");
+        		#endif
+
+			temperature = bmp085_GetTemperature(bmp085_ReadUT());
+
+			#ifdef DEBUG
+				debug("got temp");
+        		#endif
+
+			pressure = bmp085_GetPressure(bmp085_ReadUP());
+
+			#ifdef DEBUG
+				debug("got pressure");
+			#endif
+
 			dewpoint = calculate_dew_point(t, h);
-			debug("calc  dewpoint");
+
+			#ifdef DEBUG
+				debug("calc  dewpoint");
+			#endif
+
 			abs_humidity = absolute_humidity(t, h);
-			
-			debug("init curl");
+
+			#ifdef DEBUG
+				debug("init curl");
+			#endif
+
 			curl = curl_easy_init();
-	
-			char f0[] = "http://suse.home/weather/upload-weather.php?key=qscwdv&";
+
+			char f0[] = "http://weather.gjmccarthy.co.uk/upload-weather.php?key=qscwdv&";
  			char f1[] = "dewpoint=";
                         char f2[] = "&rel_hum=";
                         char f3[] = "&pressure=";
@@ -169,7 +222,9 @@ int main(int argc, char **argv)
 			char f11[] = "&light=";
 
 			if(curl) {
-				debug("Creating buffer");
+				#ifdef DEBUG
+					debug("Creating buffer");
+				#endif
 
 				float Windspeed = 10;
 				float Rainfall = 1;
@@ -224,20 +279,37 @@ int main(int argc, char **argv)
                                 strcat(buffer, tempbuffer);
                                 tempbuffer[0] = '\0';
 
-				debug(buffer);
-				
+				#ifdef DEBUG
+					debug(buffer);
+				#endif
+
 		                curl_easy_setopt(curl, CURLOPT_URL, buffer);
-				debug("Open  curl dev null");
+
+				#ifdef DEBUG
+					debug("Open  curl dev null");
+				#endif
+
                 		FILE *f = fopen("/dev/null", "wb");
-				debug("send off data");
-                		curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
+
+				#ifdef DEBUG
+					debug("send off data");
+
+				#endif
+
+	        		curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
                 		res = curl_easy_perform(curl);
                		 	if(res != CURLE_OK)
-                        		debug("curl_easy_strerror");
 
+					#ifdef DEBUG
+						debug("curl_easy_strerror");
+					#endif
 		        	fclose(f);
-				debug("reset curl");
-				curl_easy_reset(curl);
+
+				#ifdef DEBUG
+					debug("reset curl");
+				#endif
+
+			curl_easy_reset(curl);
 
 			}
 
