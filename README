@@ -1,5 +1,21 @@
-Raspberry Pi weather station
+Raspberry Pi Weather Station
 
-Libraries used:
+Uses temp, light, wind speed, wind direction, humidity, pressure sensors
 
+See weather.gjmccarthy.co.uk for more info.
+
+This code uses the following libraries and snippets and code:
+
+BMP085 code and libraries:
+https://www.john.geek.nz/2012/08/reading-data-from-a-bosch-bmp085-with-a-raspberry-pi/
+https://learn.adafruit.com/bmp085/using-the-bmp085-api-v2
+
+MCP3008 C Library:
 http://gpcf.eu/projects/embedded/adc/
+
+WiringPi:
+http://wiringpi.com/
+
+DHT22 Code:
+https://github.com/technion/lol_dht22
+
