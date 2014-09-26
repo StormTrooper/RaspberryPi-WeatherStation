@@ -94,7 +94,7 @@ int main(int argc, char **argv)
 	while( opt != -1 ) {
 		switch (opt) {
 			case 'v':
-				printf("Version 1.0\n");
+				printf("Version 1.1\n");
 				exit(0);
 			default:
 				exit(0);
@@ -114,7 +114,7 @@ int main(int argc, char **argv)
 	float dewpoint;
 	float abs_humidity;
 
-	char buffer[200];
+	char buffer[300];
         char tempbuffer[30];
 
 
@@ -220,7 +220,7 @@ int main(int argc, char **argv)
 			char f9[] = "&gust=";
                         char f10[] = "&uvi=";
 			char f11[] = "&light=";
-
+			char f12[] = "&wind_dir=";
 			if(curl) {
 				#ifdef DEBUG
 					debug("Creating buffer");
@@ -228,7 +228,7 @@ int main(int argc, char **argv)
 
 				float Windspeed = 10;
 				float Rainfall = 1;
-
+				int wind_dir = 18;		//Wind direction in degrees
                                 float WindGust = 45.12;
         			buffer[0] = '\0';								// Clear Buffers
 				tempbuffer[0] = '\0';
@@ -278,6 +278,11 @@ int main(int argc, char **argv)
                                 snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f11, Light);       //Wind Gust
                                 strcat(buffer, tempbuffer);
                                 tempbuffer[0] = '\0';
+
+				snprintf(tempbuffer, sizeof tempbuffer, "%s%d", f12, wind_dir);       //Wind Direction
+                                strcat(buffer, tempbuffer);
+                                tempbuffer[0] = '\0';
+
 
 				#ifdef DEBUG
 					debug(buffer);

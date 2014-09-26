@@ -22,6 +22,20 @@ float h;
 float t;
 static int dht22_dat[5] = {0,0,0,0,0};
 
+
+#ifdef DEBUG
+	int mydebug(char *debug_info)
+	{
+        	FILE *fp;
+	        fp=fopen("/tmp/debug.log", "a");
+        	fprintf(fp, debug_info);
+	        fprintf(fp, "\n");
+        	fclose(fp);
+        	return 0;
+	}
+#endif
+
+
 static uint8_t sizecvt(const int read)
 {
   /* digitalRead() and friends from wiringpi are defined as returning a value
@@ -29,7 +43,9 @@ static uint8_t sizecvt(const int read)
 
   if (read > 255 || read < 0)
   {
-    printf("Invalid data from wiringPi library\n");
+	#ifdef DEBUG
+    		mydebug("Invalid data from wiringPi library\n");
+	#endif
     exit(EXIT_FAILURE);
   }
   return (uint8_t)read;
