@@ -1,0 +1,5 @@
+v1.2 	22/10/2014	Changed the code code to use Adafruits python script to read the DHT22.
+			The original code I used worked but I found  at least every 1-2 weeks it
+			would crash with a segfault which I have not been able to fix.
+
+
