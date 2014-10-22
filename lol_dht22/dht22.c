@@ -5,7 +5,7 @@
  *	Amended by technion@lolware.net
  */
 
-#include <wiringPi.h>
+#include "/usr/local/include/wiringPi.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -53,13 +53,16 @@ static uint8_t sizecvt(const int read)
 
 static int read_dht22_dat()
 {
+
+// keeps crashing somewhere in here
+
   uint8_t laststate = HIGH;
   uint8_t counter = 0;
   uint8_t j = 0, i;
 
   dht22_dat[0] = dht22_dat[1] = dht22_dat[2] = dht22_dat[3] = dht22_dat[4] = 0;
 
-  // pull pin down for 18 milliseconds
+ // pull pin down for 18 milliseconds
   pinMode(DHTPIN, OUTPUT);
   digitalWrite(DHTPIN, LOW);
   delay(18);
@@ -109,6 +112,7 @@ static int read_dht22_dat()
   }
   else
   {
+
     //printf("Data not good, skip\n");
     return 0;
   }
@@ -118,14 +122,31 @@ int readDHT22 (void)
 {
  int lockfd;
 
+ 	#ifdef DEBUG
+                mydebug("inside readDHT22()\n");
+        #endif
+
+
   lockfd = open_lockfile(LOCKFILE);
 
+        #ifdef DEBUG
+                mydebug("openlock_file\n");
+        #endif
+
+
+
   if (wiringPiSetup () == -1)
-   exit(EXIT_FAILURE) ;
-	
+	{
+	mydebug("wiringpisetup failure/n");
+	exit(EXIT_FAILURE) ;
+	}
+
   if (setuid(getuid()) < 0)
   {
-    perror("Dropping privileges failed\n");
+	#ifdef DEBUG
+		mydebug("Dropping privileges failed\n");
+	#endif
+
     exit(EXIT_FAILURE);
   }
 

@@ -12,6 +12,20 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef DEBUG
+int ldebug(char *debug_info)
+{
+        FILE *fp;
+        fp=fopen("/tmp/debug.log", "a");
+        fprintf(fp, debug_info);
+        fprintf(fp, "\n");
+        fclose(fp);
+        return 0;
+}
+#endif
+
+
+
 int open_lockfile(const char *filename)
 
 {
@@ -20,7 +34,11 @@ int open_lockfile(const char *filename)
 
    if (fd < 0)
    {
-      printf("Failed to access lock file: %s\nerror: %s\n",
+      	#ifdef DEBUG
+        ldebug("Failed to access lock file");
+        #endif
+
+	printf("Failed to access lock file: %s\nerror: %s\n",
 		filename, strerror(errno));
       exit(EXIT_FAILURE);
    }
@@ -34,9 +52,18 @@ int open_lockfile(const char *filename)
           * However, a lockfile would more likely indicate an already runaway
 	  * process.
          */
+	#ifdef DEBUG
+        ldebug("Lock file in use");
+        #endif
+
 	 exit(EXIT_FAILURE);
       }
       perror("Flock failed");
+
+	#ifdef DEBUG
+        ldebug("flock failed");
+        #endif
+
       exit(EXIT_FAILURE); 
    }
    return fd;

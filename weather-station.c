@@ -14,12 +14,14 @@ http://gpcf.eu/projects/embedded/adc/
 WiringPi:
 http://wiringpi.com/
 
-DHT22 Code:
+
+DHT22 Code: (No longer using this - keeps causing segfaults at least once a week
 https://github.com/technion/lol_dht22
 */
 
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <curl/curl.h>
 #include <math.h>
@@ -27,11 +29,11 @@ https://github.com/technion/lol_dht22
 #include "BMP085/smbus.c"
 #include "BMP085/smbus.h" 
 #include "BMP085/getBMP085.c"
-#include "lol_dht22/common.h"
+//#include "lol_dht22/common.h"
 #include "mcp3008/mcp3008.h"
 
 //Prototype declaration
-void readDHT22();
+//void readDHT22();
 
 static const char * optString = "v";
 
@@ -82,6 +84,10 @@ float absolute_humidity(float temp, float rh)
 int main(int argc, char **argv)
 {
 
+        FILE *ptr_file;			//File pointer for dht22.txt file
+        char dht22_buf[20];
+	float t;			//DHT22 temp
+	float h;			//DHT22 rel humidity
 
         #ifdef DEBUG
 	debug("Program Startup");
@@ -94,7 +100,7 @@ int main(int argc, char **argv)
 	while( opt != -1 ) {
 		switch (opt) {
 			case 'v':
-				printf("Version 1.1\n");
+				printf("Version 1.2\n");
 				exit(0);
 			default:
 				exit(0);
@@ -170,7 +176,17 @@ int main(int argc, char **argv)
 				debug("Reading dht22");
 			#endif
 
-			readDHT22();				// Read DHT22 Sensor
+			// readDHT22();				// Read DHT22 Sensor
+
+			//Call Adafruits python script to read dht22 sensor on pin 4
+			//Saves result to test file
+			system("/usr/bin/python /home/pi/RaspberryPi-WeatherStation/AdafruitDHT.py 22 4 > /tmp/dht22.txt");
+
+			//Open file and get values
+			ptr_file =fopen("/tmp/dht22.txt","r");
+			while (fgets(dht22_buf,20, ptr_file)!=NULL)
+	                       sscanf(dht22_buf, "%f,%f", &t, &h);
+			fclose(ptr_file);
 
 			#ifdef DEBUG
 				debug("done dht22");
@@ -243,8 +259,8 @@ int main(int argc, char **argv)
                 		strcat(buffer, tempbuffer);
 				tempbuffer[0] = '\0';
 
-                		snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f3, (double)pressure/100);	//Pressure               		strcat(buffer, t2buffer);
-                                strcat(buffer, tempbuffer);
+                		snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f3, (double)pressure/100);	//Pressure
+			        strcat(buffer, tempbuffer);
                                 tempbuffer[0] = '\0';
 
                 		snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f4, (double)temperature/10);	//BMP085 Temperature
