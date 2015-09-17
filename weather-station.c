@@ -19,7 +19,8 @@ DHT22 Code: (No longer using this - keeps causing segfaults at least once a week
 https://github.com/technion/lol_dht22
 */
 
-
+#include <wiringPi.h>
+#include <wiringPiSPI.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -35,6 +36,16 @@ https://github.com/technion/lol_dht22
 //Prototype declaration
 //void readDHT22();
 
+#define RAIN_PIN 15
+#define WIND_PIN 16
+#define RAIN_CALIBRATION 0.2794              // 0.2794 mm per tip
+#define WIND_CALIBRATION 2.4
+
+float rainCounter;      // counter for rain guage clicks
+float windCounter;
+clock_t last_rain_interrupt_time = 0;
+clock_t last_wind_interrupt_time = 0;
+
 static const char * optString = "v";
 
 static const struct option longOpts[] = {
@@ -42,6 +53,36 @@ static const struct option longOpts[] = {
 	{ NULL, no_argument,NULL,0}
 };
 
+
+// **********************************************************************
+// rainInterrupt:  called for rain gauge counter
+
+void rainInterrupt(void) {
+        clock_t rain_interrupt_time;
+        rain_interrupt_time = clock();
+
+        if (((((float)rain_interrupt_time - (float)last_rain_interrupt_time) / 1000000.0F ) * 1000) >  200)  {
+                rainCounter++;
+        }
+        last_rain_interrupt_time = rain_interrupt_time;
+}
+
+// ======================================================================
+// windInterrupt
+
+void windInterrupt(void) {
+	clock_t wind_interrupt_time;
+        wind_interrupt_time = clock();
+
+        if (((((float)wind_interrupt_time - (float)last_wind_interrupt_time) / 1000000.0F ) * 1000) >  5)  {
+                windCounter++;
+        }
+        last_wind_interrupt_time = wind_interrupt_time;
+        
+
+}
+
+//=======================================================================
 int read_mcp3008(int channel)
 {
 	// Channel, Clock, Output, Input, CS 
@@ -61,7 +102,7 @@ int debug(char *debug_info)
 }
 #endif
 
-
+//=======================================================================
 float calculate_dew_point(float temp, float rel_humidity)
 {
   float a = 17.27;
@@ -75,12 +116,14 @@ float calculate_dew_point(float temp, float rel_humidity)
   return dp;
 }
 
+//=======================================================================
 float absolute_humidity(float temp, float rh)
 {
   float abs_hum = ((6.112 * exp((17.67 * temp)/(temp + 243.5)) * 2.164 * rh) / (273.15 + temp));
   return abs_hum;
 }
 
+//=======================================================================
 int main(int argc, char **argv)
 {
 
@@ -88,10 +131,33 @@ int main(int argc, char **argv)
         char dht22_buf[20];
 	float t;			//DHT22 temp
 	float h;			//DHT22 rel humidity
+	int result;				//wiringPi result
+	float rainFall;
+	float windSpeed;
+
 
         #ifdef DEBUG
 	debug("Program Startup");
 	#endif
+
+	result = wiringPiSetup ();
+        if (result == -1)
+        {
+                #ifdef DEBUG
+			debug("Error on wiringPiSetup.  weatherstation quitting");
+		#endif
+                return 0;
+        }
+
+	//Setup interrupt
+	if ( wiringPiISR (RAIN_PIN, INT_EDGE_BOTH, &rainInterrupt) < 0 ) {
+                printf("Unable to setup ISR");
+        }
+
+	if ( wiringPiISR (WIND_PIN, INT_EDGE_FALLING, &windInterrupt) < 0 ) {
+                printf("Unable to setup ISR");
+	}
+
 
 	int opt = 0;
 	int longIndex = 0;
@@ -198,6 +264,10 @@ int main(int argc, char **argv)
 				debug("done bmp085");
         		#endif
 
+
+			rainFall = rainCounter*RAIN_CALIBRATION;
+			windSpeed = windCounter/4*WIND_CALIBRATION;   //4 pulses per rotation
+
 			temperature = bmp085_GetTemperature(bmp085_ReadUT());
 
 			#ifdef DEBUG
@@ -242,8 +312,6 @@ int main(int argc, char **argv)
 					debug("Creating buffer");
 				#endif
 
-				float Windspeed = 10;
-				float Rainfall = 1;
 				int wind_dir = 18;		//Wind direction in degrees
                                 float WindGust = 45.12;
         			buffer[0] = '\0';								// Clear Buffers
@@ -275,13 +343,15 @@ int main(int argc, char **argv)
                                 strcat(buffer, tempbuffer);
 				tempbuffer[0] = '\0';
 
- 				snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f7, Rainfall);		//Rainfall
+ 				snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f7, rainFall);		//Rainfall
                                 strcat(buffer, tempbuffer);
 				tempbuffer[0] = '\0';
+				rainCounter = 0;			//Reset back to 0
 
-				snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f8, Windspeed);		//Windspeed
+				snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f8, windSpeed);		//Windspeed
                                 strcat(buffer, tempbuffer);
 				tempbuffer[0] = '\0';
+				windCounter = 0;			// Reset back to 0
 
      			        snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f9, WindGust);              //Windspeed
                                 strcat(buffer, tempbuffer);
@@ -310,7 +380,7 @@ int main(int argc, char **argv)
 					debug("Open  curl dev null");
 				#endif
 
-                		FILE *f = fopen("/dev/null", "wb");
+                		FILE *f = fopen("/dev/null", "w+");
 
 				#ifdef DEBUG
 					debug("send off data");
