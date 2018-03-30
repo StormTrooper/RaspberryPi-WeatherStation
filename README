@@ -1,8 +1,8 @@
 Raspberry Pi Weather Station
 
 Uses temp, light, wind speed, wind direction, humidity, pressure sensors
+and sends data to OpenHab using MQTT
 
-See weather.gjmccarthy.co.uk for more info.
 
 This code uses the following libraries and snippets and code:
 
@@ -17,5 +17,7 @@ WiringPi:
 http://wiringpi.com/
 
 DHT22 Code:
-https://github.com/technion/lol_dht22
+http://pi.gpcf.eu/projects/embedded/adc/
 
+MQTT:
+https://www.eclipse.org/paho/

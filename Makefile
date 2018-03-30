@@ -4,7 +4,7 @@ CFLAGS = -Wall
 EXE = weather-station
 LDFLAGS = -o $(EXE) 
 CFDEBUG = -Wall -DDEBUG 
-LIBS = -lwiringPi -lcurl -lm
+LIBS = -lwiringPi -lm -lpaho-mqtt3c
 all:
 	$(CC) $(CFLAGS) $(LDFLAGS) $(SRC) $(LIBS)
 debug:

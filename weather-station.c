@@ -1,6 +1,6 @@
 /*
 Raspberry Pi Weather Station
-See weather.gjmccarthy.co.uk for more info.
+Sends data to Openhab2 using MQTT
 
 This code uses the following libraries and snippets and code:
 
@@ -14,9 +14,6 @@ http://gpcf.eu/projects/embedded/adc/
 WiringPi:
 http://wiringpi.com/
 
-
-DHT22 Code: (No longer using this - keeps causing segfaults at least once a week
-https://github.com/technion/lol_dht22
 */
 
 #include <wiringPi.h>
@@ -24,37 +21,47 @@ https://github.com/technion/lol_dht22
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <curl/curl.h>
 #include <math.h>
 #include <getopt.h>
 #include "BMP085/smbus.c"
-#include "BMP085/smbus.h" 
+#include "BMP085/smbus.h"
 #include "BMP085/getBMP085.c"
-//#include "lol_dht22/common.h"
 #include "mcp3008/mcp3008.h"
-
-//Prototype declaration
-//void readDHT22();
+#include "MQTTClient.h"
+#include <time.h>
 
 #define RAIN_PIN 15
 #define WIND_PIN 16
 #define RAIN_CALIBRATION 0.2794              // 0.2794 mm per tip
 #define WIND_CALIBRATION 2.4
 
-float rainCounter;      // counter for rain guage clicks
+#define ADDRESS     "tcp://openhab2.home:1883"
+#define CLIENTID    "weatherstation"
+#define QOS         1
+#define TIMEOUT     10000L
+#define TOPIC_temperature       "weather-station/temperature"
+#define TOPIC_dewpoint		"weather-station/dewpoint"
+#define TOPIC_light		"weather-station/light"
+#define TOPIC_uvi          	"weather-station/uvi"
+#define TOPIC_rain          	"weather-station/rain"
+#define TOPIC_windspeed         "weather-station/windspeed"
+#define TOPIC_abs_hum          	"weather-station/abs_hum"
+#define TOPIC_pressure		"weather-station/pressure"
+
+float rainCounter;      		// counter for rain guage clicks
 float windCounter;
 clock_t last_rain_interrupt_time = 0;
 clock_t last_wind_interrupt_time = 0;
 
 static const char * optString = "v";
-
+char mystring[50]; 			//size of the number
 static const struct option longOpts[] = {
 	{ "version", no_argument, NULL, 'v' },
 	{ NULL, no_argument,NULL,0}
 };
 
 
-// **********************************************************************
+// ======================================================================
 // rainInterrupt:  called for rain gauge counter
 
 void rainInterrupt(void) {
@@ -78,7 +85,6 @@ void windInterrupt(void) {
                 windCounter++;
         }
         last_wind_interrupt_time = wind_interrupt_time;
-        
 
 }
 
@@ -89,6 +95,8 @@ int read_mcp3008(int channel)
   int value = mcp3008_value(channel, 11, 9, 10, 8);
   return value;
 }
+
+// ======================================================================
 
 #ifdef DEBUG
 int debug(char *debug_info)
@@ -122,7 +130,6 @@ float absolute_humidity(float temp, float rh)
   float abs_hum = ((6.112 * exp((17.67 * temp)/(temp + 243.5)) * 2.164 * rh) / (273.15 + temp));
   return abs_hum;
 }
-
 //=======================================================================
 int main(int argc, char **argv)
 {
@@ -131,14 +138,39 @@ int main(int argc, char **argv)
         char dht22_buf[20];
 	float t;			//DHT22 temp
 	float h;			//DHT22 rel humidity
-	int result;				//wiringPi result
+	int result;			//wiringPi result
 	float rainFall;
 	float windSpeed;
 
 
         #ifdef DEBUG
+	debug("=================");
 	debug("Program Startup");
+	debug("=================");
 	#endif
+
+	int opt = 0;
+        int longIndex = 0;
+
+        opt = getopt_long( argc, argv, optString, longOpts, &longIndex );
+        while( opt != -1 ) {
+                switch (opt) {
+                        case 'v':
+                                printf("Version 1.2\n");
+                                exit(0);
+                        default:
+                                exit(0);
+                }
+                opt = getopt_long( argc, argv, optString, longOpts, &longIndex );
+        }
+
+        float start_time, end_time;
+
+        #ifdef DEBUG
+		time_t curtime;
+                time(&curtime);
+                debug(ctime(&curtime));
+        #endif
 
 	result = wiringPiSetup ();
         if (result == -1)
@@ -148,6 +180,26 @@ int main(int argc, char **argv)
 		#endif
                 return 0;
         }
+
+	//Setup MQTT
+	MQTTClient client;
+    	MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
+    	MQTTClient_message pubmsg = MQTTClient_message_initializer;
+    	MQTTClient_deliveryToken token;
+    	int rc;
+    	MQTTClient_create(&client, ADDRESS, CLIENTID,
+        	MQTTCLIENT_PERSISTENCE_NONE, NULL);
+    	conn_opts.keepAliveInterval = 20;
+    	conn_opts.cleansession = 1;
+    	if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS)
+    	{
+            printf("Failed to connect, return code %d\n", rc);
+            exit(EXIT_FAILURE);
+    	}
+
+	#ifdef DEBUG
+               debug("Setup MQTT Complete");
+        #endif
 
 	//Setup interrupt
 	if ( wiringPiISR (RAIN_PIN, INT_EDGE_BOTH, &rainInterrupt) < 0 ) {
@@ -159,58 +211,26 @@ int main(int argc, char **argv)
 	}
 
 
-	int opt = 0;
-	int longIndex = 0;
-
-	opt = getopt_long( argc, argv, optString, longOpts, &longIndex );
-	while( opt != -1 ) {
-		switch (opt) {
-			case 'v':
-				printf("Version 1.2\n");
-				exit(0);
-			default:
-				exit(0);
-		}
-		opt = getopt_long( argc, argv, optString, longOpts, &longIndex );
-	}
-
- 	CURL *curl;
-        CURLcode res;
-        curl_global_init(CURL_GLOBAL_ALL);
-	time_t start, stop;
-
-	#ifdef DEBUG
-		time_t curtime;
-	#endif
-
 	float dewpoint;
 	float abs_humidity;
+	float pressure;
 
-	char buffer[300];
-        char tempbuffer[30];
-
-
-	start = time(NULL);
-	#ifdef DEBUG
-			time(&curtime);
-			debug(ctime(&curtime));
- 	#endif
+	start_time = time(NULL);
 
 	for(; /* some condition that takes forever to meet */;) {
      			// do stuff that apparently takes forever.
 
-		stop = time(NULL);
-       		double diff = difftime(stop, start);
-
-    		if (diff >= 300) {				// Upload data to internal server 5 mins
-                	//printf("3 mins passed - send data...\n");
+		end_time = time(NULL);
+       		double diff_time = difftime(end_time, start_time);
 
 
+    		if (diff_time >= 60) {				// Upload data to internal server 5 mins
+                	//printf("5 mins passed - send data...\n");
+
+			start_time = time(NULL);
 			#ifdef DEBUG
 				time(&curtime);
 				debug(ctime(&curtime));
-				debug("Write data to mysql");
-		               	start = time(NULL);
 				debug("Reading mcp3008 -chan 0");
 			#endif
 
@@ -268,7 +288,8 @@ int main(int argc, char **argv)
 			rainFall = rainCounter*RAIN_CALIBRATION;
 			windSpeed = windCounter/4*WIND_CALIBRATION;   //4 pulses per rotation
 
-			temperature = bmp085_GetTemperature(bmp085_ReadUT());
+			float temperature = bmp085_GetTemperature(bmp085_ReadUT());
+			temperature = temperature / 10.0;
 
 			#ifdef DEBUG
 				debug("got temp");
@@ -289,122 +310,105 @@ int main(int argc, char **argv)
 			abs_humidity = absolute_humidity(t, h);
 
 			#ifdef DEBUG
-				debug("init curl");
+				debug("send data to openhab");
 			#endif
 
-			curl = curl_easy_init();
+		        MQTTClient_create(&client, ADDRESS, CLIENTID,
+       	 		        MQTTCLIENT_PERSISTENCE_NONE, NULL);
+		        if ((rc = MQTTClient_connect(client, &conn_opts)) != MQTTCLIENT_SUCCESS)
+        		{
+   	        	 printf("Failed to connect, return code %d\n", rc);
+ 	       		    exit(EXIT_FAILURE);
+  		         }
 
-			char f0[] = "http://weather.gjmccarthy.co.uk/upload-weather.php?key=qscwdv&";
- 			char f1[] = "dewpoint=";
-                        char f2[] = "&rel_hum=";
-                        char f3[] = "&pressure=";
-                        char f4[] = "&bmp085_temp=";
-                        char f5[] = "&dht22_temp=";
-                        char f6[] = "&abs_hum=";
-                        char f7[] = "&rainfall=";
-                        char f8[] = "&wind=";
-			char f9[] = "&gust=";
-                        char f10[] = "&uvi=";
-			char f11[] = "&light=";
-			char f12[] = "&wind_dir=";
-			if(curl) {
-				#ifdef DEBUG
-					debug("Creating buffer");
-				#endif
+			sprintf(mystring, "%g", temperature);
+			pubmsg.payload = mystring; 
+    			pubmsg.payloadlen = strlen(mystring);
+    			pubmsg.retained = 0;
+    			MQTTClient_publishMessage(client, TOPIC_temperature, &pubmsg, &token);
+    			rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
+			#ifdef DEBUG
+	    			debug("Message with delivery:temperature");
+				debug(mystring);
+			#endif
 
-				int wind_dir = 18;		//Wind direction in degrees
-                                float WindGust = 45.12;
-        			buffer[0] = '\0';								// Clear Buffers
-				tempbuffer[0] = '\0';
+			sprintf(mystring, "%0.2g", dewpoint);
+			pubmsg.payload = mystring; 
+                        pubmsg.payloadlen = strlen(mystring);
+			MQTTClient_publishMessage(client, TOPIC_dewpoint, &pubmsg, &token);
+                        rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
+			#ifdef DEBUG
+				debug("Message with delivery:dewpoint");
+				debug(mystring);
+			#endif
 
-				strcat(buffer,f0);
+			sprintf(mystring, "%g", pressure);
+			pubmsg.payload = mystring; 
+                        pubmsg.payloadlen = strlen(mystring);
+                        MQTTClient_publishMessage(client, TOPIC_pressure, &pubmsg, &token);
+                        rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
+                        #ifdef DEBUG
+				debug("Message with delivery:pressure");
+				debug(mystring);
+			#endif
 
-                		snprintf(tempbuffer, sizeof tempbuffer,  "%s%0.2f", f1, dewpoint);			//Dew Point
-				strcat(buffer, tempbuffer);
-				tempbuffer[0] = '\0';
+ 			sprintf(mystring, "%0.2g", Light);
+                        pubmsg.payload = mystring; 
+                        pubmsg.payloadlen = strlen(mystring);
+                        MQTTClient_publishMessage(client, TOPIC_light, &pubmsg, &token);
+                        rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
+                        #ifdef DEBUG
+				debug("Message with delivery:light");
+				debug(mystring);
+			#endif
 
-				snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f2, h);			//Relative Humidity
-                		strcat(buffer, tempbuffer);
-				tempbuffer[0] = '\0';
+			sprintf(mystring, "%0.2g", uvi);
+                        pubmsg.payload = mystring; 
+                        pubmsg.payloadlen = strlen(mystring);
+                        MQTTClient_publishMessage(client, TOPIC_uvi, &pubmsg, &token);
+                        rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
+                        #ifdef DEBUG
+				debug("Message with delivery:uvi");
+				debug(mystring);
+			#endif
 
-                		snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f3, (double)pressure/100);	//Pressure
-			        strcat(buffer, tempbuffer);
-                                tempbuffer[0] = '\0';
+			sprintf(mystring, "%0.3g", abs_humidity);
+                        pubmsg.payload = mystring; 
+                        pubmsg.payloadlen = strlen(mystring);
+                        MQTTClient_publishMessage(client, TOPIC_abs_hum, &pubmsg, &token);
+                        rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
+                        #ifdef DEBUG
+				debug("Message with delivery:abs_hum");
+				debug(mystring);
+			#endif
 
-                		snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f4, (double)temperature/10);	//BMP085 Temperature
-				strcat(buffer, tempbuffer);
-				tempbuffer[0] = '\0';
-
- 				snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f5, t);			//DHT22 Temperature
-                		strcat(buffer, tempbuffer);
-				tempbuffer[0] = '\0';
-
- 				snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f6, abs_humidity);		//Abs Humidity
-                                strcat(buffer, tempbuffer);
-				tempbuffer[0] = '\0';
-
- 				snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f7, rainFall);		//Rainfall
-                                strcat(buffer, tempbuffer);
-				tempbuffer[0] = '\0';
-				rainCounter = 0;			//Reset back to 0
-
-				snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f8, windSpeed);		//Windspeed
-                                strcat(buffer, tempbuffer);
-				tempbuffer[0] = '\0';
-				windCounter = 0;			// Reset back to 0
-
-     			        snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f9, WindGust);              //Windspeed
-                                strcat(buffer, tempbuffer);
-                                tempbuffer[0] = '\0';
-
-                                snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f10, uvi);              //UV
-                                strcat(buffer, tempbuffer);
-                                tempbuffer[0] = '\0';
-
-                                snprintf(tempbuffer, sizeof tempbuffer, "%s%0.2f", f11, Light);       //Wind Gust
-                                strcat(buffer, tempbuffer);
-                                tempbuffer[0] = '\0';
-
-				snprintf(tempbuffer, sizeof tempbuffer, "%s%d", f12, wind_dir);       //Wind Direction
-                                strcat(buffer, tempbuffer);
-                                tempbuffer[0] = '\0';
+                        sprintf(mystring, "%g", windSpeed);
+                        pubmsg.payload = mystring; 
+                        pubmsg.payloadlen = strlen(mystring);
+                        MQTTClient_publishMessage(client, TOPIC_windspeed, &pubmsg, &token);
+                        rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
+                        #ifdef DEBUG
+				debug("Message with delivery:windspeed");
+				debug(mystring);
+			#endif
 
 
-				#ifdef DEBUG
-					debug(buffer);
-				#endif
+                        sprintf(mystring, "%g", rainFall);
+                        pubmsg.payload = mystring; 
+                        pubmsg.payloadlen = strlen(mystring);
+                        MQTTClient_publishMessage(client, TOPIC_rain, &pubmsg, &token);
+                        rc = MQTTClient_waitForCompletion(client, token, TIMEOUT);
+                        #ifdef DEBUG
+				debug("Message with delivery:rain");
+				debug(mystring);
+			#endif
 
-		                curl_easy_setopt(curl, CURLOPT_URL, buffer);
 
-				#ifdef DEBUG
-					debug("Open  curl dev null");
-				#endif
-
-                		FILE *f = fopen("/dev/null", "w+");
-
-				#ifdef DEBUG
-					debug("send off data");
-
-				#endif
-
-	        		curl_easy_setopt(curl, CURLOPT_WRITEDATA, f);
-                		res = curl_easy_perform(curl);
-               		 	if(res != CURLE_OK)
-
-					#ifdef DEBUG
-						debug("curl_easy_strerror");
-					#endif
-		        	fclose(f);
-
-				#ifdef DEBUG
-					debug("reset curl");
-				#endif
-
-			curl_easy_reset(curl);
-
+    			MQTTClient_disconnect(client, 10000);
+			MQTTClient_destroy(&client);
 			}
 
 	}
-	}
 	return 0;
 }
+
