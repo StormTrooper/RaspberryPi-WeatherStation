@@ -1,5 +1,5 @@
 CC = gcc
-SRC = weather-station.c # lol_dht22/dht22.c lol_dht22/locking.c
+SRC = weather-station.c 
 CFLAGS = -Wall
 EXE = weather-station
 LDFLAGS = -o $(EXE) 
