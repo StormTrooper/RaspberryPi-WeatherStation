@@ -156,7 +156,7 @@ int main(int argc, char **argv)
         while( opt != -1 ) {
                 switch (opt) {
                         case 'v':
-                                printf("Version 1.2\n");
+                                printf("Version 1.3\n");
                                 exit(0);
                         default:
                                 exit(0);
